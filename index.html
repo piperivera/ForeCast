@@ -581,6 +581,14 @@ function hideLoadingOverlay(){ const ov=document.getElementById('load-overlay');
       </div>
     </div>
   </div>
+
+  <!-- Tablas de estados por director -->
+  <div style="padding:0 24px 24px">
+    <div style="font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--text2);margin-bottom:16px;padding-top:8px;border-top:1px solid var(--border)">
+      DETALLE NEGOCIOS POR ESTADO
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px" id="gerencia-estado-tables"></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════
@@ -758,6 +766,37 @@ function hideLoadingOverlay(){ const ov=document.getElementById('load-overlay');
 let ALL_DATA = [];
 let TRM = 4150;
 
+async function fetchTRM() {
+  const setTRM = t => {
+    TRM = t;
+    const inp = document.getElementById('trm-input');
+    if(inp) inp.value = Math.round(TRM);
+    console.log('[TRM]', TRM);
+  };
+  // Source 1: frankfurter.app (CORS ok, data del BCE)
+  try {
+    const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=COP');
+    const d = await r.json();
+    const t = d.rates && d.rates.COP;
+    if(t > 100) { setTRM(t); return; }
+  } catch(e) { console.warn('[TRM] frankfurter failed', e.message); }
+  // Source 2: open.er-api.com (gratis, CORS ok)
+  try {
+    const r2 = await fetch('https://open.er-api.com/v6/latest/USD');
+    const d2 = await r2.json();
+    const t2 = d2.rates && d2.rates.COP;
+    if(t2 > 100) { setTRM(t2); return; }
+  } catch(e2) { console.warn('[TRM] open.er-api failed', e2.message); }
+  // Source 3: cdn.jsdelivr proxy to exchangerate
+  try {
+    const r3 = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
+    const d3 = await r3.json();
+    const t3 = d3.usd && d3.usd.cop;
+    if(t3 > 100) { setTRM(t3); return; }
+  } catch(e3) { console.warn('[TRM] jsdelivr failed', e3.message); }
+  console.warn('[TRM] all sources failed, using default', TRM);
+}
+
 const COLORS = [
   '#2D4FD6','#8B5FC8','#2ABFDF','#0DBF82','#F0A020',
   '#E84040','#E040A0','#40C8F0','#F06040','#1B2B8C'
@@ -776,9 +815,10 @@ function fmtUSD(v){
 function fmtNum(v){return Math.round(v).toLocaleString('es-CO')}
 function fmtPct(v){return (v*100).toFixed(1)+'%'}
 function abr(v){
-  if(v>=1e9) return '$ '+(v/1e9).toFixed(2)+'B';
-  if(v>=1e6) return '$ '+(v/1e6).toFixed(1)+'M';
-  if(v>=1e3) return '$ '+(v/1e3).toFixed(0)+'K';
+  if(v>=1e12) return '$ '+(v/1e12).toFixed(2)+' Bill';
+  if(v>=1e9)  return '$ '+(v/1e9).toFixed(2)+' MM';   // miles de millones
+  if(v>=1e6)  return '$ '+(v/1e6).toFixed(1)+' M';
+  if(v>=1e3)  return '$ '+(v/1e3).toFixed(0)+' K';
   return '$ '+Math.round(v).toLocaleString('es-CO');
 }
 
@@ -1248,56 +1288,52 @@ function renderEvoChart(containerId, dataByDir){
   const el=document.getElementById(containerId);
   if(!el) return;
   const months=['2026-01','2026-02','2026-03'];
-  const dirs=Object.keys(dataByDir);
+  const dirs=[...new Set(Object.keys(dataByDir))];
+  const nDirs=dirs.length;
   const allVals=dirs.flatMap(d=>months.map(m=>dataByDir[d][m]||0));
   const maxVal=Math.max(...allVals,1);
-  const W=500,H=130,padL=50,padR=10,padT=15,padB=30;
+  const W=520,H=150,padL=56,padR=12,padT=20,padB=36;
   const gW=W-padL-padR, gH=H-padT-padB;
-  
+  const grpW=gW/months.length;
+  const barW=Math.min(18, (grpW-8)/Math.max(nDirs,1));
+  const gap=2;
+
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible">`;
-  
+  svg+=`<defs>${dirs.map((d,di)=>`<linearGradient id="bg${di}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${COLORS[di%COLORS.length]}" stop-opacity=".95"/><stop offset="100%" stop-color="${COLORS[di%COLORS.length]}" stop-opacity=".4"/></linearGradient>`).join('')}</defs>`;
+
   // Grid lines
-  [0,.5,1].forEach(t=>{
+  [0,.25,.5,.75,1].forEach(t=>{
     const y=padT+gH*(1-t);
-    svg+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#171E35" stroke-width="1"/>`;
-    if(t>0) svg+=`<text x="${padL-4}" y="${y+4}" text-anchor="end" font-size="8" fill="#5A6A8A" font-family="IBM Plex Mono">${abr(maxVal*t)}</text>`;
+    svg+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#1A2240" stroke-width="${t===0?1.5:.7}"/>`;
+    if(t>0) svg+=`<text x="${padL-5}" y="${y+3.5}" text-anchor="end" font-size="7.5" fill="#4A5A7A" font-family="IBM Plex Mono,monospace">${abr(maxVal*t)}</text>`;
   });
-  
-  // Month labels
-  months.forEach((m,i)=>{
-    const x=padL+(i/(months.length-1))*gW;
-    svg+=`<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="#5A6A8A" font-family="IBM Plex Sans">${MES_LABELS[m]}</text>`;
-  });
-  
-  // Lines
-  dirs.forEach((d,di)=>{
-    const c=COLORS[di%COLORS.length];
-    const pts=months.map((m,i)=>{
-      const x=padL+(i/(months.length-1))*gW;
+
+  // Bars
+  months.forEach((m,mi)=>{
+    const grpCenter=padL+(mi+0.5)*grpW;
+    const totalBarW=(barW+gap)*nDirs-gap;
+    dirs.forEach((d,di)=>{
       const v=dataByDir[d][m]||0;
-      const y=padT+gH*(1-v/maxVal);
-      return `${x},${y}`;
+      const bh=Math.max(v/maxVal*gH, v>0?2:0);
+      const x=grpCenter - totalBarW/2 + di*(barW+gap);
+      const y=padT+gH-bh;
+      svg+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW}" height="${bh.toFixed(1)}" rx="2" fill="url(#bg${di})"/>`;
+      if(v>0) svg+=`<text x="${(x+barW/2).toFixed(1)}" y="${(y-3).toFixed(1)}" text-anchor="middle" font-size="6.5" fill="${COLORS[di%COLORS.length]}" font-family="IBM Plex Mono,monospace">${abr(v)}</text>`;
     });
-    svg+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-    months.forEach((m,i)=>{
-      const x=padL+(i/(months.length-1))*gW;
-      const v=dataByDir[d][m]||0;
-      const y=padT+gH*(1-v/maxVal);
-      svg+=`<circle cx="${x}" cy="${y}" r="3" fill="${c}" stroke="#0B0F1E" stroke-width="1.5"/>`;
-    });
+    // Month label
+    svg+=`<text x="${grpCenter.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="9" fill="#7A8AAA" font-family="IBM Plex Sans,sans-serif" font-weight="600">${MES_LABELS[m]||m}</text>`;
   });
-  
-  // Legend
+
+  // Legend top
   let lx=padL;
   dirs.forEach((d,di)=>{
     const c=COLORS[di%COLORS.length];
-    const parts=d.split(' ');
-    const shortName=parts.length>=2?parts[0]+' '+parts[1]:parts[0];
-    svg+=`<rect x="${lx}" y="2" width="8" height="8" rx="2" fill="${c}"/>
-           <text x="${lx+10}" y="10" font-size="7.5" fill="#8A9ACC" font-family="IBM Plex Sans">${shortName}</text>`;
-    lx+=parts[0].length*5+parts[1]?(parts[1].length*4+24):50;
+    const short=d.split(' ').slice(0,2).join(' ');
+    svg+=`<rect x="${lx}" y="4" width="9" height="9" rx="2" fill="${c}"/>`;
+    svg+=`<text x="${lx+12}" y="12" font-size="8" fill="#8A9ACC" font-family="IBM Plex Sans,sans-serif">${short}</text>`;
+    lx+=short.length*4.8+20;
   });
-  
+
   svg+='</svg>';
   el.innerHTML=svg;
 }
@@ -1399,6 +1435,75 @@ function renderGerencia(){
   const lineas=[...new Set(ALL_DATA.map(r=>r['LINEA DE PRODUCTO']||'').filter(Boolean))];
   const linData=lineas.map(l=>({name:l,val:ALL_DATA.filter(r=>r['LINEA DE PRODUCTO']===l).reduce((s,r)=>s+toCOP(r),0)})).sort((a,b)=>b.val-a.val);
   renderDonut('donut-linea','leg-linea',linData);
+
+  // Tablas de estados
+  renderGerenciaEstadoTables(ALL_DATA);
+}
+
+function renderGerenciaEstadoTables(data) {
+  const el = document.getElementById('gerencia-estado-tables');
+  if(!el) return;
+  const estados = ['GANADA','PENDIENTE','PEDIDA','APLAZADO'];
+  const colores = {'GANADA':'#0DBF82','PENDIENTE':'#F0A020','PEDIDA':'#2D4FD6','APLAZADO':'#E84040'};
+
+  el.innerHTML = estados.map(estado => {
+    const rows = data
+      .filter(r => (r['ESTADO']||'').toUpperCase() === estado)
+      .sort((a,b) => toCOP(b) - toCOP(a)); // ordenar por valor desc
+    const total = rows.reduce((s,r) => s+toCOP(r), 0);
+
+    if(!rows.length) return `
+      <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid ${colores[estado]};border-radius:12px;padding:16px">
+        <div style="font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:1px;color:${colores[estado]};margin-bottom:6px">${estado}</div>
+        <div style="font-size:11px;color:var(--text3)">Sin registros</div>
+      </div>`;
+
+    const rows_html = rows.slice(0, 30).map(r => {
+      const cliente  = (r['CLIENTE'] || r['NOMBRE CLIENTE'] || r['EMPRESA'] || '—').toString().trim();
+      const comercial = (r['COMERCIAL']||'—').split(' ')[0];
+      const valor    = toCOP(r);
+      const linea    = (r['LINEA DE PRODUCTO']||'').trim();
+      return `
+        <tr style="border-top:1px solid var(--border)">
+          <td style="padding:5px 8px;font-size:10px;color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${cliente}">${cliente}</td>
+          <td style="padding:5px 8px;font-size:10px;color:var(--text2);white-space:nowrap">${comercial}</td>
+          <td style="padding:5px 8px;font-size:10px;color:var(--text3);white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis" title="${linea}">${linea||'—'}</td>
+          <td style="padding:5px 8px;font-size:10px;color:${colores[estado]};text-align:right;font-family:var(--font-mono);font-weight:600;white-space:nowrap">${abr(valor)}</td>
+        </tr>`;
+    }).join('');
+
+    const more = rows.length > 30 ? `<tr><td colspan="4" style="padding:5px 8px;font-size:9px;color:var(--text3);text-align:center">+${rows.length-30} más...</td></tr>` : '';
+
+    return `
+      <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid ${colores[estado]};border-radius:12px;overflow:hidden">
+        <div style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
+          <div>
+            <span style="font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:1px;color:${colores[estado]}">${estado}</span>
+            <span style="font-size:9px;color:var(--text3);margin-left:8px;font-family:var(--font-body)">${rows.length} negocio${rows.length!==1?'s':''}</span>
+          </div>
+          <span style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text)">${abr(total)}</span>
+        </div>
+        <div style="overflow-y:auto;max-height:280px">
+          <table style="width:100%;border-collapse:collapse">
+            <thead style="position:sticky;top:0;z-index:1;background:var(--bg2)">
+              <tr>
+                <th style="padding:5px 8px;font-size:8.5px;font-family:var(--font-display);letter-spacing:.8px;color:var(--text3);text-align:left">EMPRESA</th>
+                <th style="padding:5px 8px;font-size:8.5px;font-family:var(--font-display);letter-spacing:.8px;color:var(--text3);text-align:left">EJECUTIVO</th>
+                <th style="padding:5px 8px;font-size:8.5px;font-family:var(--font-display);letter-spacing:.8px;color:var(--text3);text-align:left">LÍNEA</th>
+                <th style="padding:5px 8px;font-size:8.5px;font-family:var(--font-display);letter-spacing:.8px;color:var(--text3);text-align:right">VALOR</th>
+              </tr>
+            </thead>
+            <tbody>${rows_html}${more}</tbody>
+            <tfoot style="background:var(--bg2);border-top:1px solid var(--border)">
+              <tr>
+                <td colspan="3" style="padding:6px 8px;font-size:9px;font-family:var(--font-display);color:var(--text2);font-weight:600">TOTAL ${rows.length} NEGOCIOS</td>
+                <td style="padding:6px 8px;font-size:11px;text-align:right;font-family:var(--font-mono);color:${colores[estado]};font-weight:700">${abr(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 /* ══════════════════════════════════════
@@ -2156,6 +2261,8 @@ function applyRoleTabs() {
 
 // ── Auto-cargar al abrir desde SharePoint ────
 window.addEventListener('DOMContentLoaded', () => {
+  // Cargar TRM automáticamente
+  fetchTRM();
   // Pre-cargar MSAL
   loadMSAL(() => {
     initMsalApp();
