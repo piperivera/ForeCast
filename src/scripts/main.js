@@ -1417,8 +1417,52 @@ function getExecTargetName() {
   return (map[email] || CURRENT_USER.name || '').trim();
 }
 
+function buildExecSearchQueries(targetName, email) {
+  const q = [];
+  if(targetName) {
+    q.push(targetName);
+    const parts = targetName.split(' ').filter(Boolean);
+    if(parts.length >= 2) q.push(parts[0] + ' ' + parts[1]);
+  }
+  if(email && email.includes('@')) {
+    const local = email.split('@')[0].replace(/\./g,' ').trim();
+    if(local) q.push(local);
+  }
+  return [...new Set(q.map(s => s.trim()).filter(s => s.length >= 3))];
+}
+
+function findBestExecFile(items, targetName) {
+  const targetNorm = normalizePersonName(targetName||'');
+  const cand = (items||[]).filter(it => it && it.name && /\.xlsx?$/i.test(it.name) && !it.name.startsWith('~$'));
+  if(!cand.length) return null;
+  let file = cand.find(f => normalizePersonName(f.name) === targetNorm);
+  if(!file) file = cand.find(f => namesMatch(f.name, targetName));
+  if(!file && targetNorm) file = cand.find(f => normalizePersonName(f.name).includes(targetNorm));
+  return file || null;
+}
+
+async function searchExecFileInForecast(siteId, targetName) {
+  const email = (CURRENT_USER && CURRENT_USER.email || '').toLowerCase().trim();
+  const queries = buildExecSearchQueries(targetName, email);
+  if(!queries.length) return null;
+  const token = await getToken(['Files.Read.All']);
+  const folderPath = 'COMERCIAL/FORECAST 2026';
+  for(const q of queries) {
+    const url = _driveId
+      ? 'https://graph.microsoft.com/v1.0/drives/' + _driveId + '/root:/' + encodeURIComponent(folderPath) + ':/search(q=\'' + encodeURIComponent(q) + '\')?$top=50'
+      : 'https://graph.microsoft.com/v1.0/sites/' + siteId + '/drive/root:/' + encodeURIComponent(folderPath) + ':/search(q=\'' + encodeURIComponent(q) + '\')?$top=50';
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json();
+    const file = findBestExecFile(d.value || [], targetName);
+    if(file) return file;
+  }
+  return null;
+}
+
 async function loadEjecutivoFile(siteId) {
   const folders = ['Grupo Juan David Novoa','Grupo Maria Angelica Caballero','Grupo Oscar Beltran','Gupo Miller Romero'];
+  const targetName = getExecTargetName();
+  let found = false;
   for(const folder of folders) {
     const path = AZURE_CONFIG.driveBase + '/' + folder;
     const token = await getToken(['Files.Read.All']);
@@ -1429,19 +1473,30 @@ async function loadEjecutivoFile(siteId) {
       );
       const d = await r.json();
       if(!d.value) continue;
-      const targetName = getExecTargetName();
-      const targetNorm = normalizePersonName(targetName);
-      const file = d.value.find(f => normalizePersonName(f.name) === targetNorm)
-        || d.value.find(f => namesMatch(f.name, targetName));
+      const file = findBestExecFile(d.value, targetName);
       if(file) {
         const dirName = folder.replace(/^(Grupo|Gupo)\s+/i,'').trim();
         if(!LOADED_FILES_BY_DIR[dirName]) LOADED_FILES_BY_DIR[dirName] = [];
         const recs = await loadSpFile(file, dirName);
         ALL_DATA.push(...recs);
         LOADED_FILES_BY_DIR[dirName].push({ name: file.name });
-        return;
+        found = true;
+        return true;
       }
     } catch(e) { continue; }
+  }
+  // Fallback: search in FORECAST 2026 if file is nested or renamed
+  const fallback = await searchExecFileInForecast(siteId, targetName);
+  if(fallback) {
+    const dirName = directorFromPath((fallback.parentReference && fallback.parentReference.path) || '') || '';
+    if(!LOADED_FILES_BY_DIR[dirName]) LOADED_FILES_BY_DIR[dirName] = [];
+    const recs = await loadSpFile(fallback, dirName);
+    ALL_DATA.push(...recs);
+    LOADED_FILES_BY_DIR[dirName].push({ name: fallback.name });
+    return true;
+  }
+  if(!found) {
+    throw new Error('No se encontró el Excel de ' + (targetName || 'este usuario') + '. Verifica el nombre del archivo en FORECAST 2026.');
   }
 }
 
