@@ -81,19 +81,23 @@ async function fetchTRM() {
     console.log('[TRM]', TRM);
   };
 
-  // Source 1: dolar-colombia.com via proxy (TRM oficial Colombia)
+  // Source 1: dolar-colombia.com via corsproxy.io
   try {
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.dolar-colombia.com/');
-    const r = await fetch(proxyUrl, { cache:'no-store' });
-    if(r.ok) {
-      const html = await r.text();
-      // Buscar patrón: "1 USD = 3,687.87 COP" o el h2 con el valor
-      const m = html.match(/1\s*USD\s*=\s*([\d,\.]+)\s*COP/i)
-               || html.match(/<h2[^>]*>\s*1\s+USD\s*=\s*([\d,\.]+)\s*COP\s*<\/h2>/i);
-      if(m) {
-        const t = parseFloat(m[1].replace(/,/g, ''));
-        if(t > 100) { setTRM(t); return; }
-      }
+    const proxies = [
+      'https://corsproxy.io/?' + encodeURIComponent('https://www.dolar-colombia.com/'),
+      'https://api.codetabs.com/v1/proxy?quest=https://www.dolar-colombia.com/',
+    ];
+    for(const proxyUrl of proxies) {
+      try {
+        const r = await fetch(proxyUrl, { cache:'no-store' });
+        if(!r.ok) continue;
+        const html = await r.text();
+        const m = html.match(/1\s+USD\s*=\s*([\d,\.]+)\s*COP/i);
+        if(m) {
+          const t = parseFloat(m[1].replace(/,/g, ''));
+          if(t > 100) { setTRM(t); return; }
+        }
+      } catch(_) {}
     }
   } catch(e1) { console.warn('[TRM] dolar-colombia failed', e1.message); }
 
