@@ -52,7 +52,7 @@ function extractTRMFromText(text){
   const rePlain = new RegExp('([0-9.]+,[0-9]{2})\\s*COP\\/USD');
   const mp = text.match(rePlain);
   if(mp){
-    const dm = text.match(/(\\d{2}\\/\\d{2}\\/\\d{4})/);
+    const dm = text.match(new RegExp('(\\d{2}\\/\\d{2}\\/\\d{4})'));
     return {value: parseFloat(mp[1].replace(/\\./g,'').replace(',','.')), date: dm ? dm[1] : ''};
   }
   return null;
