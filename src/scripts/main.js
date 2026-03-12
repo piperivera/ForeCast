@@ -81,7 +81,23 @@ async function fetchTRM() {
     console.log('[TRM]', TRM);
   };
 
-  // Source 1: open.er-api.com (gratis, CORS ok)
+  // Source 1: dolar-colombia.com via proxy (TRM oficial Colombia)
+  try {
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.dolar-colombia.com/');
+    const r = await fetch(proxyUrl, { cache:'no-store' });
+    if(r.ok) {
+      const html = await r.text();
+      // Buscar patrón: "1 USD = 3,687.87 COP" o el h2 con el valor
+      const m = html.match(/1\s*USD\s*=\s*([\d,\.]+)\s*COP/i)
+               || html.match(/<h2[^>]*>\s*1\s+USD\s*=\s*([\d,\.]+)\s*COP\s*<\/h2>/i);
+      if(m) {
+        const t = parseFloat(m[1].replace(/,/g, ''));
+        if(t > 100) { setTRM(t); return; }
+      }
+    }
+  } catch(e1) { console.warn('[TRM] dolar-colombia failed', e1.message); }
+
+  // Source 2: open.er-api.com (fallback)
   try {
     const r2 = await fetch('https://open.er-api.com/v6/latest/USD', { cache:'no-store' });
     if(r2.ok) {
@@ -91,7 +107,7 @@ async function fetchTRM() {
     }
   } catch(e2) { console.warn('[TRM] open.er-api failed', e2.message); }
 
-  // Source 3: fawazahmed0 currency API (CDN jsdelivr, CORS ok)
+  // Source 3: fawazahmed0 via jsdelivr (fallback)
   try {
     const r3 = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json', { cache:'no-store' });
     if(r3.ok) {
@@ -100,16 +116,6 @@ async function fetchTRM() {
       if(t3 > 100) { setTRM(t3); return; }
     }
   } catch(e3) { console.warn('[TRM] fawazahmed0 failed', e3.message); }
-
-  // Source 4: exchangerate-api fallback
-  try {
-    const r4 = await fetch('https://api.exchangerate-api.com/v4/latest/USD', { cache:'no-store' });
-    if(r4.ok) {
-      const d4 = await r4.json();
-      const t4 = d4.rates && d4.rates.COP;
-      if(t4 > 100) { setTRM(t4); return; }
-    }
-  } catch(e4) { console.warn('[TRM] exchangerate-api failed', e4.message); }
 
   console.warn('[TRM] all sources failed, keeping current TRM', TRM);
 }
