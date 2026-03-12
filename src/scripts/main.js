@@ -9,7 +9,7 @@ async function fetchTRM() {
   const setTRM = t => {
     TRM = t;
     const inp = document.getElementById('trm-input');
-    if(inp) inp.value = Math.round(TRM);
+    if(inp) inp.value = Number(TRM).toFixed(2);
     console.log('[TRM]', TRM);
   };
   // Source 0: Banco de la República (SDMX). Banrep no expone CORS, usamos proxy raw.
@@ -62,6 +62,10 @@ function fmtUSD(v){
   if(v===null||v===undefined) return '—';
   return 'USD ' + Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+function fmtTRM(v){
+  if(v===null||v===undefined||isNaN(v)) return 'â€”';
+  return Number(v).toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 function fmtNum(v){return Math.round(v).toLocaleString('es-CO')}
 function fmtPct(v){return (v*100).toFixed(1)+'%'}
 function abr(v){
@@ -108,7 +112,11 @@ function namesMatch(a,b){
 }
 
 /* Get TRM */
-function getTRM(){return parseFloat(document.getElementById('trm-input').value)||4150;}
+function getTRM(){
+  const raw = document.getElementById('trm-input').value;
+  const v = parseFloat(String(raw).replace(',', '.'));
+  return v || 4150;
+}
 
 /* Liquidate to COP */
 function parseMonto(v){
@@ -445,10 +453,7 @@ function finalizeLoad(){
     const nDirs = Object.keys(LOADED_FILES_BY_DIR).length;
     reloadInfo.textContent = nFiles + ' archivos cargados · ' + nDirs + ' equipos · Última carga: ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
   }
-  // Si los Excel traían TRM, aplicarla al input
-  if(window._lastTRM && window._lastTRM > 100){
-    document.getElementById('trm-input').value = window._lastTRM;
-  }
+  // TRM se mantiene desde Banrep (no se sobrescribe con Excel)
   TRM=getTRM();
   // Asegurar visibilidad correcta sin importar el flujo que llamó
   const gc = document.getElementById('gerencia-content');
@@ -660,7 +665,7 @@ function renderGerencia(){
   document.getElementById('hoy-cop').textContent=fmtCOP(hoyCOP);
   document.getElementById('hoy-usd').textContent=fmtCOP(hoyUSD*trm);
   document.getElementById('hoy-count').textContent=hoy.length;
-  document.getElementById('hoy-trm').textContent='$ '+trm.toLocaleString('es-CO');
+  document.getElementById('hoy-trm').textContent='$ '+fmtTRM(trm);
   
   // Total COP (all)
   const totalCOP=ALL_DATA.reduce((s,r)=>s+toCOP(r),0);
@@ -694,7 +699,7 @@ function renderGerencia(){
     </div>
     <div class="kpi" style="--ac:var(--corp-cyan)"><div class="kpi-accent"></div>
       <div class="kpi-label">TRM Día</div>
-      <div class="kpi-val">$ ${trm.toLocaleString('es-CO')}</div>
+      <div class="kpi-val">$ ${fmtTRM(trm)}</div>
       <div class="kpi-sub">COP por USD</div>
     </div>
   `;
@@ -1155,7 +1160,7 @@ function renderDivisas(){
     <div class="divisa-card usd">
       <div class="divisa-label" style="color:var(--usd-color)"><span class="flag">🇺🇸</span> USD — Dólar Americano</div>
       <div class="divisa-main" style="color:var(--usd-color)">${fmtUSD(totalUSD)}</div>
-      <div class="divisa-sub">TRM ${trm.toLocaleString('es-CO')} → Liquidado ${abr(usdLiqCOP)}</div>
+      <div class="divisa-sub">TRM ${fmtTRM(trm)} → Liquidado ${abr(usdLiqCOP)}</div>
       <div class="divisa-stats">
         <div><div class="d-stat-label">Negocios</div><div class="d-stat-val" style="color:var(--usd-color)">${usdData.length}</div></div>
         <div><div class="d-stat-label">Ganadas</div><div class="d-stat-val" style="color:var(--corp-green)">${usdData.filter(r=>r['ESTADO']==='GANADA').length}</div></div>
@@ -1176,7 +1181,7 @@ function renderDivisas(){
         <td>${r['CLIENTE']||'—'}</td>
         <td style="max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r['PRODUCTO']||'—'}</td>
         <td class="td-mono td-usd">${fmtUSD(usd)}</td>
-        <td class="td-mono" style="color:var(--corp-cyan)">${trmR.toLocaleString('es-CO')}</td>
+        <td class="td-mono" style="color:var(--corp-cyan)">${fmtTRM(trmR)}</td>
         <td class="td-mono td-cop">${fmtCOP(liq)}</td>
         <td><span class="badge badge-${r['ESTADO']}">${r['ESTADO']||'—'}</span></td>
       </tr>`;
@@ -1311,7 +1316,7 @@ function renderResumen(){
     <div class="kpi" style="--ac:var(--usd-color)"><div class="kpi-accent"></div>
       <div class="kpi-label">Total USD Liquidado COP</div>
       <div class="kpi-val">${abr(usdLiq)}</div>
-      <div class="kpi-sub">${fmtUSD(totalUSD)} × ${trm.toLocaleString('es-CO')}</div>
+      <div class="kpi-sub">${fmtUSD(totalUSD)} × ${fmtTRM(trm)}</div>
       <span class="kpi-badge usd">USD→COP</span>
     </div>
     <div class="kpi" style="--ac:var(--corp-cyan)"><div class="kpi-accent"></div>
@@ -1373,7 +1378,7 @@ function renderResumen(){
         <td class="td-mono td-usd">${feb>0?fmtUSD(feb):'—'}</td>
         <td class="td-mono td-usd">${mar>0?fmtUSD(mar):'—'}</td>
         <td class="td-mono td-usd" style="font-weight:700">${fmtUSD(tot)}</td>
-        <td class="td-mono" style="color:var(--corp-cyan)">${trm.toLocaleString('es-CO')}</td>
+        <td class="td-mono" style="color:var(--corp-cyan)">${fmtTRM(trm)}</td>
         <td class="td-mono td-cop" style="font-weight:700">${fmtCOP(tot*trm)}</td>
       </tr>`;
     }).join('')}
@@ -1382,7 +1387,7 @@ function renderResumen(){
       <td class="td-mono">${usdData.length}</td>
       <td colspan="3"></td>
       <td class="td-mono td-usd" style="font-weight:800">${fmtUSD(totalUSD)}</td>
-      <td class="td-mono" style="color:var(--corp-cyan)">${trm.toLocaleString('es-CO')}</td>
+      <td class="td-mono" style="color:var(--corp-cyan)">${fmtTRM(trm)}</td>
       <td class="td-mono td-usd" style="font-weight:800;font-size:13px">${fmtCOP(usdLiq)}</td>
     </tr></tbody>
   </table>`;
