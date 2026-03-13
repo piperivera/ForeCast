@@ -81,34 +81,38 @@ async function fetchTRM() {
     console.log('[TRM]', TRM);
   };
 
-  // Source 1: Vercel endpoint (scraping dolar-colombia.com sin CORS)
+  // Source 1: datos.gov.co — API oficial Superfinanciera (CORS abierto, sin proxy)
   try {
-    const r1 = await fetch('https://fore-cast-gamma.vercel.app/api/trm', { cache:'no-store' });
+    const today = new Date().toISOString().substring(0, 10);
+    const url = `https://www.datos.gov.co/resource/32sa-8pi3.json?$where=vigenciadesde<%27${today}%27&$order=vigenciadesde%20DESC&$limit=1`;
+    const r1 = await fetch(url, { cache: 'no-store' });
     if(r1.ok) {
       const d1 = await r1.json();
-      if(d1.ok && d1.trm > 100) { setTRM(d1.trm); return; }
+      if(d1 && d1[0] && d1[0].valor) {
+        const t1 = parseFloat(d1[0].valor);
+        if(t1 > 100) { setTRM(t1); return; }
+      }
     }
-  } catch(e1) { console.warn('[TRM] vercel failed', e1.message); }
+  } catch(e1) { console.warn('[TRM] datos.gov.co failed', e1.message); }
 
-  // Source 2: open.er-api.com (fallback)
+  // Source 2: Vercel endpoint (fallback)
   try {
-    const r2 = await fetch('https://open.er-api.com/v6/latest/USD', { cache:'no-store' });
+    const r2 = await fetch('https://fore-cast-gamma.vercel.app/api/trm', { cache: 'no-store' });
     if(r2.ok) {
       const d2 = await r2.json();
-      const t2 = d2.rates && d2.rates.COP;
-      if(t2 > 100) { setTRM(t2); return; }
+      if(d2.ok && d2.trm > 100) { setTRM(d2.trm); return; }
     }
-  } catch(e2) { console.warn('[TRM] open.er-api failed', e2.message); }
+  } catch(e2) { console.warn('[TRM] vercel failed', e2.message); }
 
-  // Source 3: fawazahmed0 via jsdelivr
+  // Source 3: open.er-api.com (fallback)
   try {
-    const r3 = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json', { cache:'no-store' });
+    const r3 = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
     if(r3.ok) {
       const d3 = await r3.json();
-      const t3 = d3.usd && d3.usd.cop;
+      const t3 = d3.rates && d3.rates.COP;
       if(t3 > 100) { setTRM(t3); return; }
     }
-  } catch(e3) { console.warn('[TRM] fawazahmed0 failed', e3.message); }
+  } catch(e3) { console.warn('[TRM] open.er-api failed', e3.message); }
 
   console.warn('[TRM] all sources failed, keeping current TRM', TRM);
 }
